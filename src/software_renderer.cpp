@@ -4,8 +4,11 @@
 #include <vector>
 #include <iostream>
 #include <algorithm>
+#include <utility>
 
 #include "triangulation.h"
+
+const float VERTICAL_LINE_EPSILON = 0.001;
 
 using namespace std;
 
@@ -244,7 +247,88 @@ void SoftwareRendererImp::rasterize_line( float x0, float y0,
 
   // Task 2: 
   // Implement line rasterization
+
+  // TODO(optional) line width (strokeWidth)
+  // idea: 
+  // rasterize aliased line of width - 2; 
+  // use wu for outer edges
+
+  // TODO don't think it matches reference that well, check at the end
+  
+  bool steep = abs(y1 - y0) > abs(x1 - x0);
+  
+  if (steep) {
+    swap(x0, y0);
+    swap(x1, y1);
+  }
+      
+  if (x0 > x1) {
+    swap(x0, x1);
+    swap(y0, y1);
+  }
+
+  float dx = x1 - x0;
+  float dy = y1 - y0;
+  float gradient;
+
+  if (dx < VERTICAL_LINE_EPSILON) {
+    gradient = 1.0;
+  }
+  else {
+    gradient = dy / dx;
+  }
+  
+  // handle first endpoint
+  float xend = wu_round(x0);
+  float yend = y0 + gradient * (xend - x0);
+  float xgap = wu_rfpart(x0 + 0.5);
+  float xpxl1 = xend; // this will be used in the main loop
+  float ypxl1 = wu_ipart(yend);
+          
+  if (steep) {
+    rasterize_point(ypxl1, xpxl1, (wu_rfpart(yend) * xgap) * color);
+    rasterize_point(ypxl1 + 1, xpxl1, (wu_fpart(yend) * xgap) * color);
+  }
+  else {
+    rasterize_point(xpxl1, ypxl1, (wu_rfpart(yend) * xgap) * color);
+    rasterize_point(xpxl1, ypxl1 + 1, (wu_fpart(yend) * xgap) * color);
+  }
+
+  float intery = yend + gradient; // first y-intersection for the main loop
+                                  
+  // handle second endpoint
+  xend = wu_round(x1);
+  yend = y1 + gradient * (xend - x1);
+  xgap = wu_fpart(x1 + 0.5);
+  float xpxl2 = xend; //this will be used in the main loop
+  float ypxl2 = wu_ipart(yend);
+
+  if (steep) {
+    rasterize_point(ypxl2, xpxl2, (wu_rfpart(yend) * xgap) * color);
+    rasterize_point(ypxl2 + 1, xpxl2, (wu_fpart(yend) * xgap) * color);
+  }
+  else {
+    rasterize_point(xpxl2, ypxl2, (wu_rfpart(yend) * xgap) * color);
+    rasterize_point(xpxl2, ypxl2 + 1, (wu_fpart(yend) * xgap) * color);
+  }
+  
+  // main loop
+  if (steep) {
+    for (float x = xpxl1 + 1; x <= xpxl2 - 1; ++x) {
+      rasterize_point(wu_ipart(intery), x, wu_rfpart(intery) * color);
+      rasterize_point(wu_ipart(intery) + 1, x, wu_fpart(intery) * color);
+      intery = intery + gradient;
+    }
+  }
+  else {
+    for (float x = xpxl1 + 1; x <= xpxl2 - 1; ++x) {
+      rasterize_point(x, wu_ipart(intery), wu_rfpart(intery) * color);
+      rasterize_point(x, wu_ipart(intery) + 1, wu_fpart(intery) * color);
+      intery = intery + gradient;
+    }
+  }
 }
+
 
 void SoftwareRendererImp::rasterize_triangle( float x0, float y0,
                                               float x1, float y1,

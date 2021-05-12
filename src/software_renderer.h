@@ -119,6 +119,15 @@ class SoftwareRendererImp : public SoftwareRenderer {
                        float x1, float y1,
                        Color color);
 
+  //Xiaolin Wu's line algorithm helpers
+  float wu_ipart(float x) { return floor(x); }
+
+  float wu_round(float x) { return wu_ipart(x + 0.5); }
+
+  float wu_fpart(float x) { return x - floor(x); }
+
+  float wu_rfpart(float x) { return 1 - wu_fpart(x); }
+
   // rasterize a triangle
   void rasterize_triangle( float x0, float y0,
                            float x1, float y1,
