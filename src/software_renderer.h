@@ -110,6 +110,19 @@ class SoftwareRendererImp : public SoftwareRenderer {
   void draw_group( Group& group );
 
   // Rasterization //
+  struct SamplingRange {
+    float start;
+    float stop;
+    float step;
+
+    SamplingRange(float n_start, float n_stop, float n_step) : start(n_start), stop(n_stop), step(n_step) {}
+  };
+
+  SamplingRange get_sampling_range(float x0, float x1, float upper_bound);
+
+  int closest_cell(float x);
+
+  void fill_point(int x, int y, Color color);
 
   // rasterize a point
   void rasterize_point( float x, float y, Color color );

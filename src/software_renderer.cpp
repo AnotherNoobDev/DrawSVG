@@ -5,10 +5,12 @@
 #include <iostream>
 #include <algorithm>
 #include <utility>
+#include <cassert>
 
 #include "triangulation.h"
 
 const float VERTICAL_LINE_EPSILON = 0.001;
+const float FLOAT_POINT_EPSILON = 0.001;
 
 using namespace std;
 
@@ -218,7 +220,73 @@ void SoftwareRendererImp::draw_group( Group& group ) {
 
 }
 
-// Rasterization //
+int SoftwareRendererImp::closest_cell(float x) {
+  /*
+  int res = (int)round(x);
+
+  // for 0.5, round down
+  if (abs(wu_fpart(x) - 0.5) < FLOAT_POINT_EPSILON) {
+    res = (int)floor(x);
+  }
+
+  return res;
+  */
+
+  /*
+  if (wu_fpart(x) > 0.5) {
+    return (int)ceil(x);
+  }
+  else {
+    return floor(x);
+  }
+  */
+
+  return floor(x);
+}
+
+SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float x0, float x1, float upper_bound) {
+  float sample_dist = 1.0;
+  float start, end;
+
+  // assuming 1 sample per pixel for now
+  float x0_fpart = wu_fpart(x0);
+  float x0_ipart = wu_ipart(x0);
+
+  start = x0_ipart + 0.5;
+
+  // check if x0 is to the right of the sample
+  if (x0_fpart - 0.5 > FLOAT_POINT_EPSILON) {
+    start += sample_dist; //next sample
+  }
+
+  if (start < 0.5) {
+    start = 0.5;
+  }
+
+  float x1_fpart = wu_fpart(x1);
+  float x1_ipart = wu_ipart(x1);
+
+  end = x1_ipart + 0.5;
+  
+  // check if x1 is to the left of the sample
+  if (x1_fpart + FLOAT_POINT_EPSILON - 0.5 < 0) {
+    end -= sample_dist; //prev sample
+  }
+
+  if (end > upper_bound - 0.5) {
+    end = upper_bound - 0.5;
+  }
+
+  return SamplingRange(start, end, sample_dist);
+}
+
+void SoftwareRendererImp::fill_point(int sx, int sy, Color color) {
+  // fill sample - NOT doing alpha blending!
+  render_target[4 * (sx + sy * target_w)] = (uint8_t)(color.r * 255);
+  render_target[4 * (sx + sy * target_w) + 1] = (uint8_t)(color.g * 255);
+  render_target[4 * (sx + sy * target_w) + 2] = (uint8_t)(color.b * 255);
+  render_target[4 * (sx + sy * target_w) + 3] = (uint8_t)(color.a * 255);
+}
 
 // The input arguments in the rasterization functions 
 // below are all defined in screen space coordinates
@@ -233,12 +301,7 @@ void SoftwareRendererImp::rasterize_point( float x, float y, Color color ) {
   if ( sx < 0 || sx >= target_w ) return;
   if ( sy < 0 || sy >= target_h ) return;
 
-  // fill sample - NOT doing alpha blending!
-  render_target[4 * (sx + sy * target_w)    ] = (uint8_t) (color.r * 255);
-  render_target[4 * (sx + sy * target_w) + 1] = (uint8_t) (color.g * 255);
-  render_target[4 * (sx + sy * target_w) + 2] = (uint8_t) (color.b * 255);
-  render_target[4 * (sx + sy * target_w) + 3] = (uint8_t) (color.a * 255);
-
+  fill_point(sx, sy, color);
 }
 
 void SoftwareRendererImp::rasterize_line( float x0, float y0,
@@ -330,13 +393,102 @@ void SoftwareRendererImp::rasterize_line( float x0, float y0,
 }
 
 
-void SoftwareRendererImp::rasterize_triangle( float x0, float y0,
-                                              float x1, float y1,
-                                              float x2, float y2,
-                                              Color color ) {
+void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
+                                             float x1, float y1,
+                                             float x2, float y2,
+                                             Color color) {
   // Task 3: 
   // Implement triangle rasterization
 
+  // sort in increasing x order
+
+  if (x0 > x1) {
+    swap(x0, x1);
+    swap(y0, y1);
+  }
+
+  if (x1 > x2) {
+    swap(x1, x2);
+    swap(y1, y2);
+  }
+
+  if (x0 > x1) {
+    swap(x0, x1);
+    swap(y0, y1);
+  }
+
+  assert(x0 <= x1);
+  assert(x1 <= x2);
+  assert(x0 < x2);
+
+  // slopes
+  float m01 = 1.0;
+  if ((x1 - x0) > VERTICAL_LINE_EPSILON) {
+    m01 = (y1 - y0) / (x1 - x0);
+  }
+
+  float m12 = 1.0;
+  if ((x2 - x1) > VERTICAL_LINE_EPSILON) {
+    m12 = (y2 - y1) / (x2 - x1);
+  }
+
+  float m02 = (y2 - y0) / (x2 - x0);
+
+  auto xRange = get_sampling_range(x0, x2, target_w);
+
+  float x;
+  float yBottom, yTop;
+
+
+  // [x0, x1)
+  for (x = xRange.start; x < x1; x += xRange.step) {
+    yBottom = y0 + m02 * (x - x0);
+    yTop = y0 + m01 * (x - x0);
+
+    if (yTop < yBottom) {
+      swap(yTop, yBottom);
+    }
+
+    auto yRange = get_sampling_range(yBottom, yTop, target_h);
+
+    for (float y = yRange.start; y <= yRange.stop; y += yRange.step) {
+      fill_point(closest_cell(x), closest_cell(y), color);
+    }
+  }
+
+  // x1
+  if ((x1 - x) < FLOAT_POINT_EPSILON) {
+    yBottom = y0 + m02 * (x1 - x0);
+    yTop = y1;
+
+    if (yTop < yBottom) {
+      swap(yTop, yBottom);
+    }
+
+    auto yRange = get_sampling_range(yBottom, yTop, target_h);
+
+    for (float y = yRange.start; y <= yRange.stop; y += yRange.step) {
+      fill_point(closest_cell(x), closest_cell(y), color);
+    }
+
+    x += xRange.step;
+  }
+
+  // (x1, x2]
+  for (; x <= xRange.stop; x += xRange.step) {
+    yBottom = y0 + m02 * (x - x0);
+    yTop = y1 + m12 * (x - x1);
+
+    if (yTop < yBottom) {
+      swap(yTop, yBottom);
+    }
+
+    auto yRange = get_sampling_range(yBottom, yTop, target_h);
+
+    for (float y = yRange.start; y <= yRange.stop; y += yRange.step) {
+      fill_point(closest_cell(x), closest_cell(y), color);
+    }
+  }
 }
 
 void SoftwareRendererImp::rasterize_image( float x0, float y0,
