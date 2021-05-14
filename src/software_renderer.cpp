@@ -245,6 +245,8 @@ int SoftwareRendererImp::closest_cell(float x) {
 }
 
 SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float x0, float x1, float upper_bound) {
+  assert(x0 < x1 + FLOAT_POINT_EPSILON);
+
   float sample_dist = 1.0;
   float start, end;
 
@@ -255,7 +257,7 @@ SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float
   start = x0_ipart + 0.5;
 
   // check if x0 is to the right of the sample
-  if (x0_fpart - 0.5 > FLOAT_POINT_EPSILON) {
+  if (x0_fpart > 0.5 + FLOAT_POINT_EPSILON) {
     start += sample_dist; //next sample
   }
 
@@ -269,13 +271,15 @@ SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float
   end = x1_ipart + 0.5;
   
   // check if x1 is to the left of the sample
-  if (x1_fpart + FLOAT_POINT_EPSILON - 0.5 < 0) {
+  if (x1_fpart < 0.5 - FLOAT_POINT_EPSILON) {
     end -= sample_dist; //prev sample
   }
 
   if (end > upper_bound - 0.5) {
     end = upper_bound - 0.5;
   }
+
+  end += sample_dist;
 
   return SamplingRange(start, end, sample_dist);
 }
@@ -317,6 +321,7 @@ void SoftwareRendererImp::rasterize_line( float x0, float y0,
   // use wu for outer edges
 
   // TODO don't think it matches reference that well, check at the end
+  // check images 2,3 (basic)
   
   bool steep = abs(y1 - y0) > abs(x1 - x0);
   
@@ -400,6 +405,8 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
   // Task 3: 
   // Implement triangle rasterization
 
+  //printf("draw triangle: %f %f %f\n", x0, x1, x2);
+
   // sort in increasing x order
 
   if (x0 > x1) {
@@ -423,13 +430,17 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
 
   // slopes
   float m01 = 1.0;
+  bool infSlope01 = true;
   if ((x1 - x0) > VERTICAL_LINE_EPSILON) {
     m01 = (y1 - y0) / (x1 - x0);
+    infSlope01 = false;
   }
 
   float m12 = 1.0;
+  bool infSlope02 = true;
   if ((x2 - x1) > VERTICAL_LINE_EPSILON) {
     m12 = (y2 - y1) / (x2 - x1);
+    infSlope02 = false;
   }
 
   float m02 = (y2 - y0) / (x2 - x0);
@@ -442,6 +453,7 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
 
   // [x0, x1)
   for (x = xRange.start; x < x1; x += xRange.step) {
+    assert(!infSlope01);
     yBottom = y0 + m02 * (x - x0);
     yTop = y0 + m01 * (x - x0);
 
@@ -451,13 +463,15 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
 
     auto yRange = get_sampling_range(yBottom, yTop, target_h);
 
-    for (float y = yRange.start; y <= yRange.stop; y += yRange.step) {
+    for (float y = yRange.start; y < yRange.stop; y += yRange.step) {
+      //fill_point(closest_cell(x), closest_cell(y), Color(0.0, y / yRange.stop, 0.0));
       fill_point(closest_cell(x), closest_cell(y), color);
+      //fill_point(closest_cell(x), closest_cell(y), Color(1.0,0.0,0.0));
     }
   }
 
   // x1
-  if ((x1 - x) < FLOAT_POINT_EPSILON) {
+  if (abs(x1 - x) < FLOAT_POINT_EPSILON) {
     yBottom = y0 + m02 * (x1 - x0);
     yTop = y1;
 
@@ -467,15 +481,17 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
 
     auto yRange = get_sampling_range(yBottom, yTop, target_h);
 
-    for (float y = yRange.start; y <= yRange.stop; y += yRange.step) {
+    for (float y = yRange.start; y < yRange.stop; y += yRange.step) {
       fill_point(closest_cell(x), closest_cell(y), color);
+      //fill_point(closest_cell(x), closest_cell(y), Color(0.0, 1.0, 0.0));
     }
 
     x += xRange.step;
   }
 
   // (x1, x2]
-  for (; x <= xRange.stop; x += xRange.step) {
+  for (; x < xRange.stop; x += xRange.step) {
+    assert(!infSlope02);
     yBottom = y0 + m02 * (x - x0);
     yTop = y1 + m12 * (x - x1);
 
@@ -485,8 +501,10 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
 
     auto yRange = get_sampling_range(yBottom, yTop, target_h);
 
-    for (float y = yRange.start; y <= yRange.stop; y += yRange.step) {
+    for (float y = yRange.start; y < yRange.stop; y += yRange.step) {
+      //fill_point(closest_cell(x), closest_cell(y), Color(y / yRange.stop, 0.0, 0.0));
       fill_point(closest_cell(x), closest_cell(y), color);
+      //fill_point(closest_cell(x), closest_cell(y), Color(0.0, 0.0, 1.0));
     }
   }
 }
