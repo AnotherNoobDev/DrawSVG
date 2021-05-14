@@ -354,6 +354,10 @@ void SoftwareRendererImp::fill_sample(int sx, int sy, Color color) {
 }
 
 void SoftwareRendererImp::fill_pixel(int x, int y, Color color) {
+  // check bounds
+  if (x < 0 || x >= target_w) return;
+  if (y < 0 || y >= target_h) return;
+
   for (size_t sx = 0; sx < this->sample_rate; ++sx) {
     for (size_t sy = 0; sy < this->sample_rate; ++sy) {
       fill_sample(x * this->sample_rate + sx, y * this->sample_rate + sy, color);
@@ -370,10 +374,6 @@ void SoftwareRendererImp::rasterize_point( float x, float y, Color color ) {
   // fill in the nearest pixel
   int px = (int) floor(x);
   int py = (int) floor(y);
-
-  // check bounds
-  if ( px < 0 || px >= target_w ) return;
-  if ( py < 0 || py >= target_h ) return;
 
   fill_pixel(px, py, color);
 }
