@@ -261,14 +261,14 @@ void SoftwareRendererImp::draw_group( Group& group ) {
 }
 
 int SoftwareRendererImp::closest_sample(float x) {
-  int cell = (int)wu_ipart(x);
+  int cell = (int)ipart(x);
   cell *= this->sample_rate;
   
-  float fpart = wu_fpart(x);
+  float fp = fpart(x);
 
   size_t i = 0;
   for (; i < this->sample_cell_rbound.size(); ++i) {
-    if (fpart < this->sample_cell_rbound[i]) {
+    if (fp < this->sample_cell_rbound[i]) {
       break;
     }
   }
@@ -286,8 +286,8 @@ SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float
   float start, end;
 
   // find start
-  float x0_fpart = wu_fpart(x0);
-  float x0_ipart = wu_ipart(x0);
+  float x0_fpart = fpart(x0);
+  float x0_ipart = ipart(x0);
 
   size_t i = 0;
   for (; i < this->sample_locations.size(); ++i) {
@@ -308,8 +308,8 @@ SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float
   }
 
   // find end
-  float x1_fpart = wu_fpart(x1);
-  float x1_ipart = wu_ipart(x1);
+  float x1_fpart = fpart(x1);
+  float x1_ipart = ipart(x1);
 
   i = 0;
 
@@ -345,6 +345,14 @@ void SoftwareRendererImp::fill_sample(int sx, int sy, Color color) {
   this->supersample_target[si + 3] = (uint8_t)(color.a * 255);
 }
 
+void SoftwareRendererImp::fill_pixel(int x, int y, Color color) {
+  for (size_t sx = 0; sx < this->sample_rate; ++sx) {
+    for (size_t sy = 0; sy < this->sample_rate; ++sy) {
+      fill_sample(x * this->sample_rate + sx, y * this->sample_rate + sy, color);
+    }
+  }
+}
+
 
 // The input arguments in the rasterization functions 
 // below are all defined in screen space coordinates
@@ -359,102 +367,50 @@ void SoftwareRendererImp::rasterize_point( float x, float y, Color color ) {
   if ( px < 0 || px >= target_w ) return;
   if ( py < 0 || py >= target_h ) return;
 
-  for (size_t sx = 0; sx < this->sample_rate; ++sx) {
-    for (size_t sy = 0; sy < this->sample_rate; ++sy) {
-      fill_sample(px * this->sample_rate + sx, py * this->sample_rate + sy, color);
+  fill_pixel(px, py, color);
+}
+
+
+void SoftwareRendererImp::rasterize_line(float x0, float y0,
+                                         float x1, float y1,
+                                         Color color) {
+
+  int px0 = ipart(x0);
+  int py0 = ipart(y0);
+
+  int px1 = ipart(x1);
+  int py1 = ipart(y1);
+
+
+  int dx = abs(px1 - px0);
+  int sx = px0 < px1 ? 1 : -1;
+  int dy = -abs(py1 - py0);
+  int sy = py0 < py1 ? 1 : -1;
+  int err = dx + dy;  /* error value e_xy */
+  int e2;
+  
+  while (true) {
+    fill_pixel(px0, py0, color);
+
+    if (px0 == px1 && py0 == py1) {
+      break;
+    }
+
+    e2 = 2 * err;
+
+    if (e2 >= dy) {
+      /* e_xy+e_x > 0 */
+      err += dy;
+      px0 += sx;
+    }
+    
+    if (e2 <= dx) {
+      /* e_xy+e_y < 0 */
+      err += dx;
+      py0 += sy;
     }
   }
 }
-
-void SoftwareRendererImp::rasterize_line( float x0, float y0,
-                                          float x1, float y1,
-                                          Color color) {
-
-  // Task 2: 
-  // Implement line rasterization
-
-  // TODO(optional) line width (strokeWidth)
-  // idea: 
-  // rasterize aliased line of width - 2; 
-  // use wu for outer edges
-
-  // TODO don't think it matches reference that well, check at the end
-  // check images 2,3 (basic)
-  
-  bool steep = abs(y1 - y0) > abs(x1 - x0);
-  
-  if (steep) {
-    swap(x0, y0);
-    swap(x1, y1);
-  }
-      
-  if (x0 > x1) {
-    swap(x0, x1);
-    swap(y0, y1);
-  }
-
-  float dx = x1 - x0;
-  float dy = y1 - y0;
-  float gradient;
-
-  if (dx < VERTICAL_LINE_EPSILON) {
-    gradient = 1.0;
-  }
-  else {
-    gradient = dy / dx;
-  }
-  
-  // handle first endpoint
-  float xend = wu_round(x0);
-  float yend = y0 + gradient * (xend - x0);
-  float xgap = wu_rfpart(x0 + 0.5);
-  float xpxl1 = xend; // this will be used in the main loop
-  float ypxl1 = wu_ipart(yend);
-          
-  if (steep) {
-    rasterize_point(ypxl1, xpxl1, (wu_rfpart(yend) * xgap) * color);
-    rasterize_point(ypxl1 + 1, xpxl1, (wu_fpart(yend) * xgap) * color);
-  }
-  else {
-    rasterize_point(xpxl1, ypxl1, (wu_rfpart(yend) * xgap) * color);
-    rasterize_point(xpxl1, ypxl1 + 1, (wu_fpart(yend) * xgap) * color);
-  }
-
-  float intery = yend + gradient; // first y-intersection for the main loop
-                                  
-  // handle second endpoint
-  xend = wu_round(x1);
-  yend = y1 + gradient * (xend - x1);
-  xgap = wu_fpart(x1 + 0.5);
-  float xpxl2 = xend; //this will be used in the main loop
-  float ypxl2 = wu_ipart(yend);
-
-  if (steep) {
-    rasterize_point(ypxl2, xpxl2, (wu_rfpart(yend) * xgap) * color);
-    rasterize_point(ypxl2 + 1, xpxl2, (wu_fpart(yend) * xgap) * color);
-  }
-  else {
-    rasterize_point(xpxl2, ypxl2, (wu_rfpart(yend) * xgap) * color);
-    rasterize_point(xpxl2, ypxl2 + 1, (wu_fpart(yend) * xgap) * color);
-  }
-  
-  // main loop
-  if (steep) {
-    for (float x = xpxl1 + 1; x <= xpxl2 - 1; ++x) {
-      rasterize_point(wu_ipart(intery), x, wu_rfpart(intery) * color);
-      rasterize_point(wu_ipart(intery) + 1, x, wu_fpart(intery) * color);
-      intery = intery + gradient;
-    }
-  }
-  else {
-    for (float x = xpxl1 + 1; x <= xpxl2 - 1; ++x) {
-      rasterize_point(x, wu_ipart(intery), wu_rfpart(intery) * color);
-      rasterize_point(x, wu_ipart(intery) + 1, wu_fpart(intery) * color);
-      intery = intery + gradient;
-    }
-  }
-}
-
 
 void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
                                              float x1, float y1,

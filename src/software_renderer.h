@@ -133,11 +133,18 @@ class SoftwareRendererImp : public SoftwareRenderer {
     SamplingRange(float n_start, float n_stop, float n_step) : start(n_start), stop(n_stop), step(n_step) {}
   };
 
+  // numerical helpers
+  float ipart(float x) { return floor(x); }
+
+  float fpart(float x) { return x - floor(x); }
+
   SamplingRange get_sampling_range(float x0, float x1, float upper_bound);
 
   int closest_sample(float x);
 
-  void fill_sample(int x, int y, Color color);
+  void fill_sample(int sx, int sy, Color color);
+
+  void fill_pixel(int x, int y, Color color);
 
   // rasterize a point
   void rasterize_point( float x, float y, Color color );
@@ -146,15 +153,6 @@ class SoftwareRendererImp : public SoftwareRenderer {
   void rasterize_line( float x0, float y0,
                        float x1, float y1,
                        Color color);
-
-  //Xiaolin Wu's line algorithm helpers
-  float wu_ipart(float x) { return floor(x); }
-
-  float wu_round(float x) { return wu_ipart(x + 0.5); }
-
-  float wu_fpart(float x) { return x - floor(x); }
-
-  float wu_rfpart(float x) { return 1 - wu_fpart(x); }
 
   // rasterize a triangle
   void rasterize_triangle( float x0, float y0,
