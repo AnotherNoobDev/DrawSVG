@@ -13,7 +13,7 @@ namespace CMU462 { // CMU462
 class SoftwareRenderer : public SVGRenderer {
  public:
 
-  SoftwareRenderer( ) : sample_rate (1) { }
+   SoftwareRenderer( ) : sample_rate (1) { }
 
   // Free used resources
   virtual ~SoftwareRenderer( ) { }
@@ -47,7 +47,7 @@ class SoftwareRenderer : public SVGRenderer {
 
   // Sample rate (square root of samples per pixel)
   size_t sample_rate;
-
+  
   // Render target memory location
   unsigned char* render_target; 
 
@@ -66,7 +66,7 @@ class SoftwareRenderer : public SVGRenderer {
 class SoftwareRendererImp : public SoftwareRenderer {
  public:
 
-  SoftwareRendererImp( ) : SoftwareRenderer( ) { }
+   SoftwareRendererImp();
 
   // draw an svg input to render target
   void draw_svg( SVG& svg );
@@ -79,6 +79,21 @@ class SoftwareRendererImp : public SoftwareRenderer {
                           size_t width, size_t height );
 
  private:
+
+   // supersampling
+
+   float sample_dist;
+   std::vector<float> sample_locations;
+   std::vector<float> sample_cell_rbound;
+
+   std::vector<unsigned char> supersample_target;
+
+   size_t supersample_target_w, supersample_target_h;
+
+   // supersampling
+   void update_sample_locations();
+
+   void update_supersample_target();
 
   // Primitive Drawing //
 
@@ -110,6 +125,26 @@ class SoftwareRendererImp : public SoftwareRenderer {
   void draw_group( Group& group );
 
   // Rasterization //
+  struct SamplingRange {
+    float start;
+    float stop;
+    float step;
+
+    SamplingRange(float n_start, float n_stop, float n_step) : start(n_start), stop(n_stop), step(n_step) {}
+  };
+
+  // numerical helpers
+  float ipart(float x) { return floor(x); }
+
+  float fpart(float x) { return x - floor(x); }
+
+  SamplingRange get_sampling_range(float x0, float x1, float upper_bound);
+
+  int closest_sample(float x);
+
+  void fill_sample(int sx, int sy, Color color);
+
+  void fill_pixel(int x, int y, Color color);
 
   // rasterize a point
   void rasterize_point( float x, float y, Color color );
@@ -132,6 +167,8 @@ class SoftwareRendererImp : public SoftwareRenderer {
 
   // resolve samples to render target
   void resolve( void );
+
+  void resolve_pixel(int x, int y);
 
 }; // class SoftwareRendererImp
 
