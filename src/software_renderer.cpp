@@ -15,11 +15,18 @@ const float FLOAT_POINT_EPSILON = 0.001;
 using namespace std;
 
 namespace CMU462 {
-
+  
 
 // Implements SoftwareRenderer //
 
+SoftwareRendererImp::SoftwareRendererImp(){
+  render_target = nullptr;
+  set_sample_rate(1);
+}
+
 void SoftwareRendererImp::draw_svg( SVG& svg ) {
+  //clear
+  std::fill(this->supersample_target.begin(), this->supersample_target.end(), 255);
 
   // set top level transformation
   transformation = svg_2_screen;
@@ -51,6 +58,23 @@ void SoftwareRendererImp::set_sample_rate( size_t sample_rate ) {
   // You may want to modify this for supersampling support
   this->sample_rate = sample_rate;
 
+  update_sample_locations();
+  update_supersample_target();
+}
+
+void SoftwareRendererImp::update_sample_locations() {
+  this->sample_locations.clear();
+  this->sample_cell_rbound.clear();
+
+  float cell_size = 1.0 / this->sample_rate;
+  float cell_center = cell_size / 2.0;
+
+  this->sample_dist = cell_size;
+
+  for (size_t i = 0; i < sample_rate; ++i) {
+    this->sample_locations.push_back(i * cell_size + cell_center);
+    this->sample_cell_rbound.push_back(i * cell_size + cell_size);
+  }
 }
 
 void SoftwareRendererImp::set_render_target( unsigned char* render_target,
@@ -62,7 +86,23 @@ void SoftwareRendererImp::set_render_target( unsigned char* render_target,
   this->target_w = width;
   this->target_h = height;
 
+  update_supersample_target();
 }
+
+void SoftwareRendererImp::update_supersample_target() {
+  if (!this->render_target) {
+    return;
+  }
+
+  this->supersample_target_w = this->sample_rate * this->target_w;
+  this->supersample_target_h = this->sample_rate * this->target_h;
+
+  auto size = this->supersample_target_w * this->supersample_target_h * 4;
+
+  this->supersample_target.reserve(size * 2); // less allocations hopefully
+  this->supersample_target.resize(size, 255);
+}
+
 
 void SoftwareRendererImp::draw_element( SVGElement* element ) {
 
@@ -220,77 +260,91 @@ void SoftwareRendererImp::draw_group( Group& group ) {
 
 }
 
-int SoftwareRendererImp::closest_cell(float x) {
-  /*
-  int res = (int)round(x);
+int SoftwareRendererImp::closest_sample(float x) {
+  int cell = (int)wu_ipart(x);
+  cell *= this->sample_rate;
+  
+  float fpart = wu_fpart(x);
 
-  // for 0.5, round down
-  if (abs(wu_fpart(x) - 0.5) < FLOAT_POINT_EPSILON) {
-    res = (int)floor(x);
+  size_t i = 0;
+  for (; i < this->sample_cell_rbound.size(); ++i) {
+    if (fpart < this->sample_cell_rbound[i]) {
+      break;
+    }
   }
 
-  return res;
-  */
-
-  /*
-  if (wu_fpart(x) > 0.5) {
-    return (int)ceil(x);
+  if (i == this->sample_cell_rbound.size()) {
+    i = this->sample_cell_rbound.size() - 1;
   }
-  else {
-    return floor(x);
-  }
-  */
 
-  return floor(x);
+  return (cell + i);
 }
 
 SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float x0, float x1, float upper_bound) {
   assert(x0 < x1 + FLOAT_POINT_EPSILON);
 
-  float sample_dist = 1.0;
   float start, end;
 
-  // assuming 1 sample per pixel for now
+  // find start
   float x0_fpart = wu_fpart(x0);
   float x0_ipart = wu_ipart(x0);
 
-  start = x0_ipart + 0.5;
-
-  // check if x0 is to the right of the sample
-  if (x0_fpart > 0.5 + FLOAT_POINT_EPSILON) {
-    start += sample_dist; //next sample
+  size_t i = 0;
+  for (; i < this->sample_locations.size(); ++i) {
+    if (x0_fpart < this->sample_locations[i] - FLOAT_POINT_EPSILON) {
+      break;
+    }
   }
 
-  if (start < 0.5) {
-    start = 0.5;
+  if (i == this->sample_locations.size()) {
+    start = x0_ipart + 1.0 + this->sample_locations[0]; //next block
+  }
+  else {
+    start = x0_ipart + this->sample_locations[i];
   }
 
+  if (start < this->sample_locations[0]) {
+    start = this->sample_locations[0];
+  }
+
+  // find end
   float x1_fpart = wu_fpart(x1);
   float x1_ipart = wu_ipart(x1);
 
-  end = x1_ipart + 0.5;
+  i = 0;
+
+  for (; i < this->sample_locations.size(); ++i) {
+    if (x1_fpart < this->sample_locations[i] - FLOAT_POINT_EPSILON ) {
+      break;
+    }
+  }
   
-  // check if x1 is to the left of the sample
-  if (x1_fpart < 0.5 - FLOAT_POINT_EPSILON) {
-    end -= sample_dist; //prev sample
+  if (i == this->sample_locations.size()) {
+    end = x1_ipart + 1.0 + this->sample_locations[0]; //next block
+  }
+  else {
+    end = x1_ipart + this->sample_locations[i];
   }
 
-  if (end > upper_bound - 0.5) {
-    end = upper_bound - 0.5;
+  upper_bound -= (this->sample_dist / 2.0);
+  if (end > upper_bound) {
+    end = upper_bound;
   }
 
-  end += sample_dist;
-
-  return SamplingRange(start, end, sample_dist);
+  return SamplingRange(start, end, this->sample_dist);
 }
 
-void SoftwareRendererImp::fill_point(int sx, int sy, Color color) {
+void SoftwareRendererImp::fill_sample(int sx, int sy, Color color) {
   // fill sample - NOT doing alpha blending!
-  render_target[4 * (sx + sy * target_w)] = (uint8_t)(color.r * 255);
-  render_target[4 * (sx + sy * target_w) + 1] = (uint8_t)(color.g * 255);
-  render_target[4 * (sx + sy * target_w) + 2] = (uint8_t)(color.b * 255);
-  render_target[4 * (sx + sy * target_w) + 3] = (uint8_t)(color.a * 255);
+  
+  size_t si = 4 * (sx + sy * this->supersample_target_w);
+
+  this->supersample_target[si    ] = (uint8_t)(color.r * 255);
+  this->supersample_target[si + 1] = (uint8_t)(color.g * 255);
+  this->supersample_target[si + 2] = (uint8_t)(color.b * 255);
+  this->supersample_target[si + 3] = (uint8_t)(color.a * 255);
 }
+
 
 // The input arguments in the rasterization functions 
 // below are all defined in screen space coordinates
@@ -298,14 +352,18 @@ void SoftwareRendererImp::fill_point(int sx, int sy, Color color) {
 void SoftwareRendererImp::rasterize_point( float x, float y, Color color ) {
 
   // fill in the nearest pixel
-  int sx = (int) floor(x);
-  int sy = (int) floor(y);
+  int px = (int) floor(x);
+  int py = (int) floor(y);
 
   // check bounds
-  if ( sx < 0 || sx >= target_w ) return;
-  if ( sy < 0 || sy >= target_h ) return;
+  if ( px < 0 || px >= target_w ) return;
+  if ( py < 0 || py >= target_h ) return;
 
-  fill_point(sx, sy, color);
+  for (size_t sx = 0; sx < this->sample_rate; ++sx) {
+    for (size_t sy = 0; sy < this->sample_rate; ++sy) {
+      fill_sample(px * this->sample_rate + sx, py * this->sample_rate + sy, color);
+    }
+  }
 }
 
 void SoftwareRendererImp::rasterize_line( float x0, float y0,
@@ -464,9 +522,9 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
     auto yRange = get_sampling_range(yBottom, yTop, target_h);
 
     for (float y = yRange.start; y < yRange.stop; y += yRange.step) {
-      //fill_point(closest_cell(x), closest_cell(y), Color(0.0, y / yRange.stop, 0.0));
-      fill_point(closest_cell(x), closest_cell(y), color);
-      //fill_point(closest_cell(x), closest_cell(y), Color(1.0,0.0,0.0));
+      //fill_sample(closest_sample(x), closest_sample(y), Color(0.0, y / yRange.stop, 0.0));
+      fill_sample(closest_sample(x), closest_sample(y), color);
+      //fill_sample(closest_sample(x), closest_sample(y), Color(1.0,0.0,0.0));
     }
   }
 
@@ -482,8 +540,8 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
     auto yRange = get_sampling_range(yBottom, yTop, target_h);
 
     for (float y = yRange.start; y < yRange.stop; y += yRange.step) {
-      fill_point(closest_cell(x), closest_cell(y), color);
-      //fill_point(closest_cell(x), closest_cell(y), Color(0.0, 1.0, 0.0));
+      fill_sample(closest_sample(x), closest_sample(y), color);
+      //fill_sample(closest_sample(x), closest_sample(y), Color(0.0, 1.0, 0.0));
     }
 
     x += xRange.step;
@@ -502,9 +560,9 @@ void SoftwareRendererImp::rasterize_triangle(float x0, float y0,
     auto yRange = get_sampling_range(yBottom, yTop, target_h);
 
     for (float y = yRange.start; y < yRange.stop; y += yRange.step) {
-      //fill_point(closest_cell(x), closest_cell(y), Color(y / yRange.stop, 0.0, 0.0));
-      fill_point(closest_cell(x), closest_cell(y), color);
-      //fill_point(closest_cell(x), closest_cell(y), Color(0.0, 0.0, 1.0));
+      //fill_sample(closest_sample(x), closest_sample(y), Color(y / yRange.stop, 0.0, 0.0));
+      fill_sample(closest_sample(x), closest_sample(y), color);
+      //fill_sample(closest_sample(x), closest_sample(y), Color(0.0, 0.0, 1.0));
     }
   }
 }
@@ -523,8 +581,42 @@ void SoftwareRendererImp::resolve( void ) {
   // Task 4: 
   // Implement supersampling
   // You may also need to modify other functions marked with "Task 4".
-  return;
 
+  for (size_t x = 0; x < target_w; ++x) {
+    for (size_t y = 0; y < target_h; ++y) {
+      resolve_pixel(x, y);
+    }
+  }
+}
+
+void SoftwareRendererImp::resolve_pixel(int x, int y) {
+  float val_r = 0;
+  float val_g = 0;
+  float val_b = 0;
+  float val_a = 0;
+
+  size_t si;
+  int si_x = x * this->sample_rate, si_y = y * this->sample_rate;
+
+  for (size_t sx = 0; sx < this->sample_rate; ++sx) {
+    for (size_t sy = 0; sy < this->sample_rate; ++sy) {
+      si = 4 * (si_x + sx + (si_y + sy) * this->supersample_target_w);
+      
+      val_r += this->supersample_target[si    ];
+      val_g += this->supersample_target[si + 1];
+      val_b += this->supersample_target[si + 2];
+      val_a += this->supersample_target[si + 3];
+    }
+  }
+  
+  si = 4 * (x + y * this->target_w);
+  
+  float nsamples = this->sample_rate * this->sample_rate * 1.0f;
+
+  this->render_target[si    ] = (uint8_t)(round(val_r / nsamples));
+  this->render_target[si + 1] = (uint8_t)(round(val_g / nsamples));
+  this->render_target[si + 2] = (uint8_t)(round(val_b / nsamples));
+  this->render_target[si + 3] = (uint8_t)(round(val_a / nsamples));
 }
 
 
