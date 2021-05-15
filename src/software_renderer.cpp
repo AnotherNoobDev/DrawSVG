@@ -547,8 +547,11 @@ void SoftwareRendererImp::rasterize_image( float x0, float y0,
   float xdist = x1 - x0;
   float ydist = y1 - y0;
 
+  float uscale = tex.width / xdist;
+  float vscale = tex.height / ydist;
+
   // tex coords [0,1]
-  float u, v;
+  float u, v; 
 
   for (float sx = xRange.start; sx < xRange.stop; sx += xRange.step) {
     for (float sy = yRange.start; sy < yRange.stop; sy += yRange.step) {
@@ -558,7 +561,8 @@ void SoftwareRendererImp::rasterize_image( float x0, float y0,
 
       // sample
       //auto color = this->sampler->sample_nearest(tex, u, v, 0);
-      auto color = this->sampler->sample_bilinear(tex, u, v, 0);
+      //auto color = this->sampler->sample_bilinear(tex, u, v, 0);
+      auto color = this->sampler->sample_trilinear(tex, u, v, uscale, vscale);
 
       // fill
       fill_sample(closest_sample(sx), closest_sample(sy), color);
