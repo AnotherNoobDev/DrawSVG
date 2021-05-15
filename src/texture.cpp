@@ -128,6 +128,14 @@ Color Sampler2DImp::sample_bilinear(Texture& tex,
   int i = (int)floor(u - 0.5f);
   int j = (int)floor(v - 0.5f);
 
+  if (i < 0) {
+    i = 0;
+  }
+
+  if (j < 0) {
+    j = 0;
+  }
+
   int at = 4 * (i + j * mip.width);
 
   auto c00 = Color(
@@ -137,7 +145,9 @@ Color Sampler2DImp::sample_bilinear(Texture& tex,
     mip.texels[at + 3] / 255.0f
   );
 
-  at += 4; // tx++
+  if (i < mip.width - 1) {
+    at += 4; // tx++
+  }
 
   auto c10 = Color(
     mip.texels[at    ] / 255.0f,
@@ -146,8 +156,10 @@ Color Sampler2DImp::sample_bilinear(Texture& tex,
     mip.texels[at + 3] / 255.0f
   );
 
-  at += 4 * mip.width; // j++
-
+  if (j < mip.height - 1) {
+    at += 4 * mip.width; // j++
+  }
+  
   auto c11 = Color(
     mip.texels[at    ] / 255.0f,
     mip.texels[at + 1] / 255.0f,
@@ -155,7 +167,9 @@ Color Sampler2DImp::sample_bilinear(Texture& tex,
     mip.texels[at + 3] / 255.0f
   );
 
-  at -= 4; // i--
+  if (i < mip.width - 1) {
+    at -= 4; // i--
+  }
 
   auto c01 = Color(
     mip.texels[at    ] / 255.0f,
