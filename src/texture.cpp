@@ -83,10 +83,27 @@ Color Sampler2DImp::sample_nearest(Texture& tex,
                                    int level) {
 
   // Task 6: Implement nearest neighbour interpolation
-  
-  // return magenta for invalid level
-  return Color(1,0,1,1);
 
+  // mip level
+  if (level >= tex.mipmap.size()) {
+    // return magenta for invalid level
+    return Color(1, 0, 1, 1);
+  }
+
+  auto& mip = tex.mipmap[level];
+
+  // map u,v [0,1] to nearest image pixel
+  int tx = (int)floor(u * mip.width);
+  int ty = (int)floor(v * mip.height);
+
+  int t = 4 * (tx + ty * mip.width);
+
+  return Color(
+    mip.texels[t    ] / 255.0f,
+    mip.texels[t + 1] / 255.0f,
+    mip.texels[t + 2] / 255.0f,
+    mip.texels[t + 3] / 255.0f
+  );
 }
 
 Color Sampler2DImp::sample_bilinear(Texture& tex, 
@@ -95,9 +112,62 @@ Color Sampler2DImp::sample_bilinear(Texture& tex,
   
   // Task 6: Implement bilinear filtering
 
-  // return magenta for invalid level
-  return Color(1,0,1,1);
+  // mip level
+  if (level >= tex.mipmap.size()) {
+    // return magenta for invalid level
+    return Color(1, 0, 1, 1);
+  }
 
+  auto& mip = tex.mipmap[level];
+
+  // map to image
+  u *= mip.width;
+  v *= mip.height;
+
+  // get closest image loc
+  int i = (int)floor(u - 0.5f);
+  int j = (int)floor(v - 0.5f);
+
+  int at = 4 * (i + j * mip.width);
+
+  auto c00 = Color(
+    mip.texels[at    ] / 255.0f,
+    mip.texels[at + 1] / 255.0f,
+    mip.texels[at + 2] / 255.0f,
+    mip.texels[at + 3] / 255.0f
+  );
+
+  at += 4; // tx++
+
+  auto c10 = Color(
+    mip.texels[at    ] / 255.0f,
+    mip.texels[at + 1] / 255.0f,
+    mip.texels[at + 2] / 255.0f,
+    mip.texels[at + 3] / 255.0f
+  );
+
+  at += 4 * mip.width; // j++
+
+  auto c11 = Color(
+    mip.texels[at    ] / 255.0f,
+    mip.texels[at + 1] / 255.0f,
+    mip.texels[at + 2] / 255.0f,
+    mip.texels[at + 3] / 255.0f
+  );
+
+  at -= 4; // i--
+
+  auto c01 = Color(
+    mip.texels[at    ] / 255.0f,
+    mip.texels[at + 1] / 255.0f,
+    mip.texels[at + 2] / 255.0f,
+    mip.texels[at + 3] / 255.0f
+  );
+  
+  float s = u - (i + 0.5);
+  float t = v - (j + 0.5);
+
+  return (1.0 - t) * ((1 - s) * c00 + s * c10) + t * ((1.0 - s) * c01 + s * c11);
 }
 
 Color Sampler2DImp::sample_trilinear(Texture& tex, 

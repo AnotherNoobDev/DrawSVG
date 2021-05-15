@@ -537,6 +537,37 @@ void SoftwareRendererImp::rasterize_image( float x0, float y0,
   // Task 6: 
   // Implement image rasterization
 
+  assert(x0 <= x1);
+  assert(y0 <= y1);
+
+  // get samples
+  auto xRange = get_sampling_range(x0, x1, target_w);
+  auto yRange = get_sampling_range(y0, y1, target_h);
+
+  float xdist = x1 - x0;
+  float ydist = y1 - y0;
+
+  // tex coords [0,1]
+  float u, v;
+
+  for (float sx = xRange.start; sx < xRange.stop; sx += xRange.step) {
+    for (float sy = yRange.start; sy < yRange.stop; sy += yRange.step) {
+
+      u = (sx - x0) / xdist;
+      v = (sy - y0) / ydist;
+
+      // sample
+      //auto color = this->sampler->sample_nearest(tex, u, v, 0);
+      auto color = this->sampler->sample_bilinear(tex, u, v, 0);
+
+      // fill
+      fill_sample(closest_sample(sx), closest_sample(sy), color);
+    }
+  }
+
+
+
+
 }
 
 // resolve samples to render target
