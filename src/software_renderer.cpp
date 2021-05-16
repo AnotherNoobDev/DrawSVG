@@ -343,14 +343,44 @@ SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float
 }
 
 void SoftwareRendererImp::fill_sample(int sx, int sy, Color color) {
-  // fill sample - NOT doing alpha blending!
   
   size_t si = 4 * (sx + sy * this->supersample_target_w);
 
-  this->supersample_target[si    ] = (uint8_t)(color.r * 255);
-  this->supersample_target[si + 1] = (uint8_t)(color.g * 255);
-  this->supersample_target[si + 2] = (uint8_t)(color.b * 255);
-  this->supersample_target[si + 3] = (uint8_t)(color.a * 255);
+  // canvas color
+  auto canvas = Color(
+    this->supersample_target[si    ] / 255.0f,
+    this->supersample_target[si + 1] / 255.0f,
+    this->supersample_target[si + 2] / 255.0f,
+    this->supersample_target[si + 3] / 255.0f
+  );
+
+  //premultiply alpha
+  canvas.r *= canvas.a;
+  canvas.g *= canvas.a;
+  canvas.b *= canvas.a;
+
+  color.r *= color.a;
+  color.g *= color.a;
+  color.b *= color.a;
+
+  auto final_color = Color(
+    (1 - color.a) * canvas.r + color.r,
+    (1 - color.a) * canvas.g + color.g,
+    (1 - color.a) * canvas.b + color.b,
+    1 - (1 - color.a) * (1 - canvas.a)
+  );
+
+  //un-premultiply
+  if (final_color.a > FLOAT_POINT_EPSILON) {
+    final_color.r /= final_color.a;
+    final_color.g /= final_color.a;
+    final_color.b /= final_color.a;
+  }
+
+  this->supersample_target[si    ] = (uint8_t)(final_color.r * 255);
+  this->supersample_target[si + 1] = (uint8_t)(final_color.g * 255);
+  this->supersample_target[si + 2] = (uint8_t)(final_color.b * 255);
+  this->supersample_target[si + 3] = (uint8_t)(final_color.a * 255);
 }
 
 void SoftwareRendererImp::fill_pixel(int x, int y, Color color) {
