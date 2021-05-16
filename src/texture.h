@@ -64,6 +64,8 @@ class Sampler2DImp : public Sampler2D {
   
   void generate_mips( Texture& tex, int startLevel );
 
+  void fill_mip_level(Texture& tex, int level);
+
   Color sample_nearest(Texture& tex, 
                        float u, float v, 
                        int level = 0);

@@ -109,6 +109,12 @@ void SoftwareRendererImp::draw_element( SVGElement* element ) {
   // Task 5 (part 1):
   // Modify this to implement the transformation stack
 
+  // push transformation matrix
+  Matrix3x3 transform_save = transformation;
+
+  // set object transformation
+  transformation = transformation * element->transform;
+
   switch(element->type) {
     case POINT:
       draw_point(static_cast<Point&>(*element));
@@ -138,6 +144,8 @@ void SoftwareRendererImp::draw_element( SVGElement* element ) {
       break;
   }
 
+  // pop transformation matrix
+  transformation = transform_save;
 }
 
 
@@ -335,17 +343,51 @@ SoftwareRendererImp::SamplingRange SoftwareRendererImp::get_sampling_range(float
 }
 
 void SoftwareRendererImp::fill_sample(int sx, int sy, Color color) {
-  // fill sample - NOT doing alpha blending!
   
   size_t si = 4 * (sx + sy * this->supersample_target_w);
 
-  this->supersample_target[si    ] = (uint8_t)(color.r * 255);
-  this->supersample_target[si + 1] = (uint8_t)(color.g * 255);
-  this->supersample_target[si + 2] = (uint8_t)(color.b * 255);
-  this->supersample_target[si + 3] = (uint8_t)(color.a * 255);
+  // canvas color
+  auto canvas = Color(
+    this->supersample_target[si    ] / 255.0f,
+    this->supersample_target[si + 1] / 255.0f,
+    this->supersample_target[si + 2] / 255.0f,
+    this->supersample_target[si + 3] / 255.0f
+  );
+
+  //premultiply alpha
+  canvas.r *= canvas.a;
+  canvas.g *= canvas.a;
+  canvas.b *= canvas.a;
+
+  color.r *= color.a;
+  color.g *= color.a;
+  color.b *= color.a;
+
+  auto final_color = Color(
+    (1 - color.a) * canvas.r + color.r,
+    (1 - color.a) * canvas.g + color.g,
+    (1 - color.a) * canvas.b + color.b,
+    1 - (1 - color.a) * (1 - canvas.a)
+  );
+
+  //un-premultiply
+  if (final_color.a > FLOAT_POINT_EPSILON) {
+    final_color.r /= final_color.a;
+    final_color.g /= final_color.a;
+    final_color.b /= final_color.a;
+  }
+
+  this->supersample_target[si    ] = (uint8_t)(final_color.r * 255);
+  this->supersample_target[si + 1] = (uint8_t)(final_color.g * 255);
+  this->supersample_target[si + 2] = (uint8_t)(final_color.b * 255);
+  this->supersample_target[si + 3] = (uint8_t)(final_color.a * 255);
 }
 
 void SoftwareRendererImp::fill_pixel(int x, int y, Color color) {
+  // check bounds
+  if (x < 0 || x >= target_w) return;
+  if (y < 0 || y >= target_h) return;
+
   for (size_t sx = 0; sx < this->sample_rate; ++sx) {
     for (size_t sy = 0; sy < this->sample_rate; ++sy) {
       fill_sample(x * this->sample_rate + sx, y * this->sample_rate + sy, color);
@@ -362,10 +404,6 @@ void SoftwareRendererImp::rasterize_point( float x, float y, Color color ) {
   // fill in the nearest pixel
   int px = (int) floor(x);
   int py = (int) floor(y);
-
-  // check bounds
-  if ( px < 0 || px >= target_w ) return;
-  if ( py < 0 || py >= target_h ) return;
 
   fill_pixel(px, py, color);
 }
@@ -528,6 +566,41 @@ void SoftwareRendererImp::rasterize_image( float x0, float y0,
                                            Texture& tex ) {
   // Task 6: 
   // Implement image rasterization
+
+  assert(x0 <= x1);
+  assert(y0 <= y1);
+
+  // get samples
+  auto xRange = get_sampling_range(x0, x1, target_w);
+  auto yRange = get_sampling_range(y0, y1, target_h);
+
+  float xdist = x1 - x0;
+  float ydist = y1 - y0;
+
+  float uscale = tex.width / xdist;
+  float vscale = tex.height / ydist;
+
+  // tex coords [0,1]
+  float u, v; 
+
+  for (float sx = xRange.start; sx < xRange.stop; sx += xRange.step) {
+    for (float sy = yRange.start; sy < yRange.stop; sy += yRange.step) {
+
+      u = (sx - x0) / xdist;
+      v = (sy - y0) / ydist;
+
+      // sample
+      //auto color = this->sampler->sample_nearest(tex, u, v, 0);
+      //auto color = this->sampler->sample_bilinear(tex, u, v, 0);
+      auto color = this->sampler->sample_trilinear(tex, u, v, uscale, vscale);
+
+      // fill
+      fill_sample(closest_sample(sx), closest_sample(sy), color);
+    }
+  }
+
+
+
 
 }
 
